@@ -1,0 +1,18 @@
+{
+  "DEMO_SITE_1": {
+    "alias": "demo-alias-1",
+    "name": "demo-mcp-site-1"
+  },
+  "DEMO_SITE_2": {
+    "alias": "demo-alias-2",
+    "name": "demo-mcp-site-2"
+  },
+  "DEMO_SITE_3": {
+    "alias": "demo-alias-3",
+    "name": "demo-mcp-site-3"
+  },
+  "DEMO_SITE_4": {
+    "alias": "demo-alias-4",
+    "name": "demo-mcp-site-4"
+  }
+}

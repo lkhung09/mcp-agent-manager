@@ -1,0 +1,436 @@
+#!/usr/bin/env bash
+# bin/mcp-agent-manager — main entry point
+
+set -euo pipefail
+
+# Resolve symlink so lib/ is found relative to real binary, not symlink location
+# (bash 3.2 + macOS compatible — no readlink -f required)
+_REAL_BIN="${BASH_SOURCE[0]}"
+while [[ -L "$_REAL_BIN" ]]; do
+    _LINK_TARGET="$(readlink "$_REAL_BIN")"
+    if [[ "$_LINK_TARGET" = /* ]]; then
+        _REAL_BIN="$_LINK_TARGET"
+    else
+        _REAL_BIN="$(dirname "$_REAL_BIN")/$_LINK_TARGET"
+    fi
+done
+SCRIPT_DIR="$(cd "$(dirname "$_REAL_BIN")" && pwd)"
+LIB_DIR="${SCRIPT_DIR}/../lib"
+
+# shellcheck source=../lib/utils.sh
+source "${LIB_DIR}/utils.sh"
+# shellcheck source=../lib/doctor.sh
+source "${LIB_DIR}/doctor.sh"
+# shellcheck source=../lib/registry.sh
+source "${LIB_DIR}/registry.sh"
+source "${LIB_DIR}/renderer_claude.sh"
+source "${LIB_DIR}/renderer_codex.sh"
+source "${LIB_DIR}/syncer_teleport.sh"
+source "${LIB_DIR}/apply.sh"
+source "${LIB_DIR}/runner.sh"
+source "${LIB_DIR}/chat_runtime.sh"
+source "${LIB_DIR}/installer.sh"
+source "${LIB_DIR}/tools.sh"
+
+_usage() {
+  cat <<USAGE
+Usage: mcp-agent-manager <subcommand> [options]
+       mcp-agent-manager <subcommand> --help
+
+Subcommands:
+  doctor              Run health checks for all dependencies and runtime dirs
+  bootstrap [--apply] Import MCP globals into registry (preview by default)
+  list [--all]        List available MCP agents; --all includes inactive entries
+  render [--apply]    Render specialized agent files (preview by default)
+  apply [--apply] [--allow-smoke-warn]
+                      Full 7-step apply flow (backup→render→validate→smoke→cutover)
+  sync [--target all|claude|codex] [--apply]
+                      Optional Teleport sync; --apply quarantines unhealthy MCPs
+  enable <name> [--apply]
+                      Enable one personal MCP and render agents
+  disable <name> [--apply]
+                      Disable one personal MCP and remove stale agents
+  remove <name> [--apply]
+                      Remove one personal MCP and remove stale agents
+  run <name>          Run STDIO wrapper for agent (sources secrets.env)
+  chat-session <name> Scoped Claude Chat MCP bridge (JSONL over stdin/stdout)
+  tools <subcommand>  Inspect, search, or refresh persistent tools/list cache
+  install [--apply]   Set up symlinks, shell PATH, and Desktop Chat Skill ZIP
+
+Planned, not available yet:
+  add, edit
+
+Common flow:
+
+  # 1. Install or update Skill, PATH, and Desktop Chat ZIP
+  ./bin/mcp-agent-manager install --apply
+  source ~/.zshrc    # macOS zsh
+  source ~/.bashrc   # Ubuntu bash
+
+  # 2. Check system and existing MCP entries
+  mcp-agent-manager doctor
+  mcp-agent-manager list
+
+  # 3. Import existing MCP globals, then render scoped agents
+  mcp-agent-manager bootstrap
+  mcp-agent-manager bootstrap --apply
+  mcp-agent-manager render
+  mcp-agent-manager render --apply
+
+  # 4. First cutover: preview first, apply after review
+  mcp-agent-manager apply
+  mcp-agent-manager apply --apply
+
+  # 5. Optional Teleport catalog sync
+  mcp-agent-manager sync --target all
+  mcp-agent-manager sync --apply --target all
+
+  # 6. Enable, disable, or remove personal MCP entries
+  mcp-agent-manager list --all
+  mcp-agent-manager disable <name>
+  mcp-agent-manager disable <name> --apply
+  mcp-agent-manager enable <name>
+  mcp-agent-manager enable <name> --apply
+  mcp-agent-manager remove <name>
+  mcp-agent-manager remove <name> --apply
+
+  # 7. Inspect or refresh redacted tools/list metadata cache
+  mcp-agent-manager tools list
+  mcp-agent-manager tools search instance
+  mcp-agent-manager tools refresh <name>
+  mcp-agent-manager tools refresh <name> --apply
+
+Command details:
+  mcp-agent-manager <subcommand> --help
+USAGE
+}
+
+_usage_subcommand() {
+  local cmd="$1"
+  case "$cmd" in
+    doctor)
+      cat <<'USAGE'
+Usage: mcp-agent-manager doctor
+
+Run health checks:
+  - jq, Claude Code, Codex versions
+  - tsh version when available (optional; only needed for Teleport sync)
+  - agent directories writable
+  - Claude Code + Codex Skill symlinks
+  - canonical SKILL.md freshness
+
+Example:
+  mcp-agent-manager doctor
+USAGE
+      ;;
+    bootstrap)
+      cat <<'USAGE'
+Usage: mcp-agent-manager bootstrap [--apply] [--force]
+
+Import existing MCP globals from:
+  ~/.codex/config.toml
+  ~/.claude.json
+
+Write runtime files under:
+  ~/.config/mcp-agent-manager/
+
+Options:
+  --apply  Write registry.json, deferred.json, managed-state.json
+  --force  Overwrite existing registry.json when used with --apply
+
+Default: preview only.
+
+Examples:
+  mcp-agent-manager bootstrap
+  mcp-agent-manager bootstrap --apply
+USAGE
+      ;;
+    list)
+      cat <<'USAGE'
+Usage: mcp-agent-manager list [--all]
+
+List available registry entries with name, enabled state, status, target,
+description.
+Use the name column as <name> for enable, disable, remove, run, chat-session,
+and tools commands.
+
+Options:
+  --all  Include disabled and quarantined registry entries
+
+Examples:
+  mcp-agent-manager list
+  mcp-agent-manager list --all
+USAGE
+      ;;
+    render)
+      cat <<'USAGE'
+Usage: mcp-agent-manager render [--apply]
+
+Render specialized agent files:
+  ~/.claude/agents/mcp-managed-<name>.md
+  ~/.codex/agents/mcp-managed-<name>.toml
+
+Options:
+  --apply  Preflight collisions, then write generated files and managed state
+
+Default: preview only.
+
+Examples:
+  mcp-agent-manager render
+  mcp-agent-manager render --apply
+USAGE
+      ;;
+    apply)
+      cat <<'USAGE'
+Usage: mcp-agent-manager apply [--apply] [--allow-smoke-warn]
+
+Run full cutover:
+  1. Backup parent configs, registry, state, generated files
+  2. Preflight and render specialized agents
+  3. Validate YAML, TOML, markers
+  4. Smoke test active STDIO wrappers
+  5. Remove managed MCP globals from parent configs
+  6. Verify parent config parsing
+  7. Auto-restore on failure
+
+Options:
+  --apply             Execute cutover
+  --allow-smoke-warn  Permit timeout or non-JSON smoke warnings
+
+Default: preview only.
+Safety: avoid --allow-smoke-warn unless degraded cutover is accepted.
+
+Examples:
+  mcp-agent-manager apply
+  mcp-agent-manager apply --apply
+USAGE
+      ;;
+    sync)
+      cmd_sync --help
+      ;;
+    run)
+      cat <<'USAGE'
+Usage: mcp-agent-manager run <name>
+
+Start one enabled STDIO MCP server:
+  1. Load registry entry
+  2. Source ~/.config/mcp-agent-manager/secrets.env
+  3. Resolve explicit ${VAR} env references
+  4. Exec upstream MCP command
+
+Helper command for generated agents and runtimes. New users usually do not run
+this manually.
+
+Example:
+  mcp-agent-manager run notebooklm
+USAGE
+      ;;
+  chat-session)
+      cat <<'USAGE'
+Usage: mcp-agent-manager chat-session <name>
+
+Start a scoped Claude Chat MCP bridge:
+  - validates enabled stdio registry entry
+  - opens upstream MCP via JSONL bridge
+  - accepts tools.search / tools.schema / tools.call / close
+  - closes on idle timeout or explicit close
+
+Helper command for chat runtimes that speak JSONL. New users usually do not run
+this manually.
+
+Example:
+  mcp-agent-manager chat-session notebooklm
+USAGE
+      ;;
+  tools)
+      cat <<'USAGE'
+Usage: mcp-agent-manager tools <subcommand> [options]
+
+Inspect or refresh persistent MCP tools/list metadata cache.
+Tool call outputs are never cached.
+Use <name> values from: mcp-agent-manager list
+
+Subcommands:
+  list [<name>] [--all]
+  search <query> [--name <name>] [--limit N] [--all]
+  refresh <name> [--apply]
+  refresh --all [--apply]
+  index [--apply]
+
+Default refresh behavior: preview only.
+index rebuilds tool-index.jsonl (preview by default, pass --apply to write).
+
+Examples:
+  mcp-agent-manager tools list
+  mcp-agent-manager tools search search --name notebooklm
+  mcp-agent-manager tools refresh notebooklm
+  mcp-agent-manager tools refresh notebooklm --apply
+  mcp-agent-manager tools index
+  mcp-agent-manager tools index --apply
+USAGE
+      ;;
+  install)
+      cat <<'USAGE'
+Usage: mcp-agent-manager install [--apply]
+
+Install shared Skill symlinks into canonical source:
+  ./skill/
+  ~/.claude/skills/mcp-agent-manager -> canonical
+  ~/.agents/skills/mcp-agent-manager -> canonical
+  ~/.codex/skills/mcp-agent-manager  -> canonical (compatibility)
+
+Also create:
+  ~/.local/bin/mcp-agent-manager -> canonical bin
+  ~/.config/mcp-agent-manager/secrets.env (mode 0600, if missing)
+  ~/.config/mcp-agent-manager/tool-cache/ (mode 0700)
+  ~/.config/mcp-agent-manager/dist/mcp-agent-manager-skill.zip
+  backup of stale legacy runtime copy, if present
+
+Also update one shell rc file idempotently:
+  - ~/.zshrc for zsh
+  - ~/.bashrc for bash
+  - ~/.profile fallback for other shells
+  - ensure ~/.local/bin is in PATH
+  - remove exact legacy mcp-agent-manager PATH export
+
+After first install in an existing terminal:
+  source ~/.zshrc    # macOS zsh
+  source ~/.bashrc   # Ubuntu bash
+
+Options:
+  --apply  Create or update files and symlinks
+
+Default: preview only.
+
+Examples:
+  ./bin/mcp-agent-manager install
+  ./bin/mcp-agent-manager install --apply
+USAGE
+      ;;
+    enable)
+      cat <<'USAGE'
+Usage: mcp-agent-manager enable <name> [--apply]
+
+Enable one personal MCP registry entry and render generated agents.
+Teleport-managed entries are rejected; use: mcp-agent-manager sync --apply
+
+Options:
+  --apply  Backup registry and generated state, mutate atomically, render agents,
+           validate generated files, and rollback scoped state on failure
+
+Default: preview only.
+
+Examples:
+  mcp-agent-manager enable notebooklm
+  mcp-agent-manager enable notebooklm --apply
+USAGE
+      ;;
+    disable)
+      cat <<'USAGE'
+Usage: mcp-agent-manager disable <name> [--apply]
+
+Disable one personal MCP registry entry and remove stale generated agents.
+Teleport-managed entries are rejected; use: mcp-agent-manager sync --apply
+
+Options:
+  --apply  Backup registry and generated state, mutate atomically, render agents,
+           validate generated files, and rollback scoped state on failure
+
+Default: preview only.
+
+Examples:
+  mcp-agent-manager disable notebooklm
+  mcp-agent-manager disable notebooklm --apply
+USAGE
+      ;;
+    remove)
+      cat <<USAGE
+Usage: mcp-agent-manager remove <name> [--apply]
+
+Remove one personal MCP registry entry and stale generated agents.
+Teleport-managed entries are rejected; use: mcp-agent-manager sync --apply
+
+Options:
+  --apply  Backup registry and generated state, mutate atomically, render agents,
+           validate generated files, and rollback scoped state on failure
+
+Default: preview only.
+
+Examples:
+  mcp-agent-manager remove my-personal-mcp
+  mcp-agent-manager remove my-personal-mcp --apply
+USAGE
+      ;;
+    *)
+      _usage
+      ;;
+  esac
+}
+
+_usage_planned() {
+  local cmd="$1"
+  printf 'Usage: mcp-agent-manager %s\n\n' "$cmd"
+  printf 'Status: planned, not available yet.\n\n'
+  case "$cmd" in
+    add)     printf 'Future intent: add one personal MCP registry entry.\n' ;;
+    edit)    printf 'Future intent: edit one personal MCP registry entry.\n' ;;
+    enable)  printf 'Future intent: enable one registry entry.\n' ;;
+    disable) printf 'Future intent: disable one registry entry.\n' ;;
+    remove)  printf 'Future intent: remove one personal MCP registry entry.\n' ;;
+  esac
+}
+
+_stub() {
+  # Bug 10: exit non-zero so callers detect unimplemented command
+  local cmd="$1"
+  printf '[mcp-agent-manager] %s: not implemented\n' "$cmd" >&2
+  return 1
+}
+
+CMD="${1:-}"
+shift || true
+
+if [[ "$CMD" == "--help" || "$CMD" == "-h" || "$CMD" == "help" ]]; then
+  _usage
+  exit 0
+fi
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  case "$CMD" in
+    add|edit) _usage_planned "$CMD" ;;
+    *) _usage_subcommand "$CMD" ;;
+  esac
+  exit 0
+fi
+
+case "$CMD" in
+  doctor)    cmd_doctor "$@" ;;
+  bootstrap) registry_bootstrap "$@" ;;
+  list)      registry_list "$@" ;;
+  render)
+    if [[ " $* " == *" --apply "* ]]; then
+      render_claude --preflight
+      render_codex --preflight
+    fi
+    render_claude "$@"
+    render_codex "$@"
+    ;;
+  apply)     cmd_apply "$@" ;;
+  sync)      cmd_sync "$@" ;;
+  add|edit)
+    _stub "$CMD"
+    ;;
+  enable)    registry_enable "$@" ;;
+  disable)   registry_disable "$@" ;;
+  remove)    registry_remove "$@" ;;
+  run)       cmd_run "$@" ;;
+  chat-session) cmd_chat_session "$@" ;;
+  tools)     cmd_tools "$@" ;;
+  install)   cmd_install "$@" ;;
+  "")      _usage; exit 0 ;;
+  *)
+    log_error "Unknown subcommand: ${CMD}"
+    _usage
+    exit 1
+    ;;
+esac

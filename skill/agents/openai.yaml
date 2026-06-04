@@ -1,0 +1,4 @@
+interface:
+  display_name: "MCP Agent Manager"
+  short_description: "Route and manage scoped MCP agents"
+  default_prompt: "Use $mcp-agent-manager as a runtime-first scoped MCP router: infer domain/site, search local tool cache when needed, open one chat-session, call the matching tool, then close. Use admin commands only for explicit setup, sync, health, or troubleshooting requests."
