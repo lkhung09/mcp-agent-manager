@@ -31,6 +31,7 @@ source "${LIB_DIR}/runner.sh"
 source "${LIB_DIR}/chat_runtime.sh"
 source "${LIB_DIR}/installer.sh"
 source "${LIB_DIR}/tools.sh"
+source "${LIB_DIR}/config.sh"
 
 _usage() {
   cat <<USAGE
@@ -52,9 +53,10 @@ Subcommands:
                       Disable one personal MCP and remove stale agents
   remove <name> [--apply]
                       Remove one personal MCP and remove stale agents
-  run <name>          Run STDIO wrapper for agent (sources secrets.env)
-  chat-session <name> Scoped Claude Chat MCP bridge (JSONL over stdin/stdout)
+  run <mcp-name>      Run STDIO wrapper for generated agents
+  session <mcp-name>  Runtime helper for one scoped MCP session
   tools <subcommand>  Inspect, search, or refresh persistent tools/list cache
+  config <subcommand> Manage simple local settings
   install [--apply]   Set up symlinks, shell PATH, and Desktop Chat Skill ZIP
 
 Planned, not available yet:
@@ -151,7 +153,7 @@ Usage: mcp-agent-manager list [--all]
 
 List available registry entries with name, enabled state, status, target,
 description.
-Use the name column as <name> for enable, disable, remove, run, chat-session,
+Use the name column as <mcp-name> for enable, disable, remove, run, session,
 and tools commands.
 
 Options:
@@ -210,11 +212,11 @@ USAGE
       ;;
     run)
       cat <<'USAGE'
-Usage: mcp-agent-manager run <name>
+Usage: mcp-agent-manager run <mcp-name>
 
 Start one enabled STDIO MCP server:
   1. Load registry entry
-  2. Source ~/.config/mcp-agent-manager/secrets.env
+  2. Load simple export lines from ~/.config/mcp-agent-manager/secrets.env
   3. Resolve explicit ${VAR} env references
   4. Exec upstream MCP command
 
@@ -225,21 +227,25 @@ Example:
   mcp-agent-manager run notebooklm
 USAGE
       ;;
-  chat-session)
+  session|chat-session)
       cat <<'USAGE'
-Usage: mcp-agent-manager chat-session <name>
+Usage: mcp-agent-manager session <mcp-name>
 
-Start a scoped Claude Chat MCP bridge:
+Start one scoped MCP session for chat/agent runtimes:
   - validates enabled stdio registry entry
   - opens upstream MCP via JSONL bridge
   - accepts tools.search / tools.schema / tools.call / close
   - closes on idle timeout or explicit close
+  - MCP_AGENT_MANAGER_INIT_TIMEOUT can raise slow startup timeout
 
-Helper command for chat runtimes that speak JSONL. New users usually do not run
-this manually.
+Helper command for agent runtimes. New users usually do not run this manually.
+Use <mcp-name> values from: mcp-agent-manager list
+
+Compatibility alias (deprecated):
+  mcp-agent-manager chat-session <mcp-name>
 
 Example:
-  mcp-agent-manager chat-session notebooklm
+  mcp-agent-manager session notebooklm
 USAGE
       ;;
   tools)
@@ -268,6 +274,9 @@ Examples:
   mcp-agent-manager tools index
   mcp-agent-manager tools index --apply
 USAGE
+      ;;
+  config)
+      _config_usage
       ;;
   install)
       cat <<'USAGE'
@@ -424,8 +433,9 @@ case "$CMD" in
   disable)   registry_disable "$@" ;;
   remove)    registry_remove "$@" ;;
   run)       cmd_run "$@" ;;
-  chat-session) cmd_chat_session "$@" ;;
+  session|chat-session) cmd_chat_session "$@" ;;
   tools)     cmd_tools "$@" ;;
+  config)    cmd_config "$@" ;;
   install)   cmd_install "$@" ;;
   "")      _usage; exit 0 ;;
   *)

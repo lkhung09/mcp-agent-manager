@@ -16,7 +16,7 @@ LIBEXEC = ROOT / "libexec"
 sys.path.insert(0, str(LIBEXEC))
 
 import mcp_chat_session as chat  # noqa: E402
-from mcp_stdio_client import MCPRPCError, MCPStdioClient  # noqa: E402
+from mcp_stdio_client import MCPRPCError, MCPStdioClient, load_initialize_timeout  # noqa: E402
 
 
 NEWLINE_SERVER = r"""
@@ -122,6 +122,23 @@ for line in sys.stdin:
     print(json.dumps({"jsonrpc":"2.0","id":req["id"],"result":result}), flush=True)
 """
 
+SLOW_INIT_SERVER = r"""
+import json, sys, time
+for line in sys.stdin:
+    req = json.loads(line)
+    method = req.get("method")
+    if method == "notifications/initialized":
+        continue
+    if method == "initialize":
+        time.sleep(0.25)
+        result = {"protocolVersion":"2024-11-05","capabilities":{},"serverInfo":{"name":"fixture","version":"1"}}
+    elif method == "tools/list":
+        result = {"tools":[]}
+    else:
+        continue
+    print(json.dumps({"jsonrpc":"2.0","id":req["id"],"result":result}), flush=True)
+"""
+
 
 def client(script: str, timeout: float = 2.0) -> MCPStdioClient:
     return MCPStdioClient(sys.executable, ["-u", "-c", script], timeout=timeout)
@@ -171,8 +188,62 @@ class StdioClientTests(unittest.TestCase):
         finally:
             instance.close()
 
+    def test_initialize_timeout_can_be_raised_by_env(self) -> None:
+        old_value = os.environ.get("MCP_AGENT_MANAGER_INIT_TIMEOUT")
+        os.environ["MCP_AGENT_MANAGER_INIT_TIMEOUT"] = "1"
+        try:
+            instance = MCPStdioClient(
+                sys.executable,
+                ["-u", "-c", SLOW_INIT_SERVER],
+                timeout=load_initialize_timeout(),
+                initialize_timeout=load_initialize_timeout(),
+            )
+            try:
+                instance.open()
+                self.assertEqual(instance.list_tools(), [])
+            finally:
+                instance.close()
+        finally:
+            if old_value is None:
+                os.environ.pop("MCP_AGENT_MANAGER_INIT_TIMEOUT", None)
+            else:
+                os.environ["MCP_AGENT_MANAGER_INIT_TIMEOUT"] = old_value
+
 
 class ChatBridgeTests(unittest.TestCase):
+    def test_idle_timeout_loads_settings_env_and_env_override(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            root = Path(home) / ".config" / "mcp-agent-manager"
+            root.mkdir(parents=True)
+            (root / "settings.env").write_text('export MCP_AGENT_MANAGER_CHAT_IDLE_TIMEOUT="900"\n')
+            (root / "settings.env").chmod(0o600)
+            env = {
+                **os.environ,
+                "HOME": home,
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONPATH": str(LIBEXEC),
+            }
+            loaded = subprocess.run(
+                [sys.executable, "-c", "import mcp_chat_session as c; print(c.IDLE_TIMEOUT)"],
+                text=True,
+                capture_output=True,
+                env=env,
+                timeout=3,
+            )
+            self.assertEqual(loaded.returncode, 0, loaded.stderr)
+            self.assertEqual(loaded.stdout.strip(), "900")
+
+            env["MCP_AGENT_MANAGER_CHAT_IDLE_TIMEOUT"] = "1200"
+            override = subprocess.run(
+                [sys.executable, "-c", "import mcp_chat_session as c; print(c.IDLE_TIMEOUT)"],
+                text=True,
+                capture_output=True,
+                env=env,
+                timeout=3,
+            )
+            self.assertEqual(override.returncode, 0, override.stderr)
+            self.assertEqual(override.stdout.strip(), "1200")
+
     def test_tools_call_rpc_error_returns_ok_false(self) -> None:
         with tempfile.TemporaryDirectory() as home:
             root = Path(home) / ".config" / "mcp-agent-manager"

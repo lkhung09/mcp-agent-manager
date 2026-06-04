@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# lib/runner.sh — run <name>: source secrets.env then exec STDIO MCP command
+# lib/runner.sh — run <name>: load safe secrets.env exports then exec STDIO MCP command
 
 _SECRETS_ENV="${REGISTRY_DIR}/secrets.env"
 
 # cmd_run <name>
-# Source secrets.env (0600) then exec the STDIO command for <name>.
+# Load simple secrets.env exports (0600) then exec the STDIO command for <name>.
 # This is the wrapper agents call to start an MCP server process.
 cmd_run() {
   local name="${1:-}"
@@ -18,9 +18,12 @@ cmd_run() {
     return 1
   fi
 
+  local jq
+  jq="$(require_jq)" || return 1
+
   # Look up entry
   local entry_json
-  entry_json=$(/usr/bin/jq --arg s "$name" '.personal_mcp_servers[$s] // empty' "$REGISTRY_FILE")
+  entry_json=$("$jq" --arg s "$name" '.personal_mcp_servers[$s] // empty' "$REGISTRY_FILE")
   if [[ -z "$entry_json" ]]; then
     log_error "run: name '${name}' not found in registry"
     return 1
@@ -28,7 +31,7 @@ cmd_run() {
 
   # Check enabled
   local enabled
-  enabled=$(printf '%s' "$entry_json" | /usr/bin/jq -r '.enabled')
+  enabled=$(printf '%s' "$entry_json" | "$jq" -r '.enabled')
   if [[ "$enabled" != "true" ]]; then
     log_error "run: name '${name}' is disabled in registry"
     return 1
@@ -36,7 +39,7 @@ cmd_run() {
 
   # Check transport
   local transport
-  transport=$(printf '%s' "$entry_json" | /usr/bin/jq -r '.transport')
+  transport=$(printf '%s' "$entry_json" | "$jq" -r '.transport')
   if [[ "$transport" != "stdio" ]]; then
     log_error "run: name '${name}' transport='${transport}' — only stdio supported by run"
     return 1
@@ -53,13 +56,12 @@ cmd_run() {
       log_error "run: secrets.env has unsafe permissions (0${perms}). Fix: chmod 600 ${_SECRETS_ENV}"
       return 1
     fi
-    # shellcheck source=/dev/null
-    source "$_SECRETS_ENV"
+    _load_safe_secrets_env "$_SECRETS_ENV" || return 1
   fi
 
   # Extract command and args
   local command
-  command=$(printf '%s' "$entry_json" | /usr/bin/jq -r '.command')
+  command=$(printf '%s' "$entry_json" | "$jq" -r '.command')
 
   # Read args into array safely (bash 3.2 compat: no mapfile).
   # Track count separately: bash 3.2 + set -u rejects empty-array expansion.
@@ -68,7 +70,7 @@ cmd_run() {
   while IFS= read -r arg; do
     args+=("$arg")
     arg_count=$((arg_count+1))
-  done < <(printf '%s' "$entry_json" | /usr/bin/jq -r '.args[]')
+  done < <(printf '%s' "$entry_json" | "$jq" -r '.args[]')
 
   # Export env vars from entry. Exact ${VAR} values reference secrets.env;
   # all other values remain literals. Never eval registry content.
@@ -85,13 +87,41 @@ cmd_run() {
     fi
     printf -v "$ev_key" '%s' "$ev_val"
     export "$ev_key"
-  done < <(printf '%s' "$entry_json" | /usr/bin/jq -r '.env | to_entries[] | "\(.key)=\(.value)"')
+  done < <(printf '%s' "$entry_json" | "$jq" -r '.env | to_entries[] | "\(.key)=\(.value)"')
 
   # exec — replace shell process with MCP server
   if [[ $arg_count -eq 0 ]]; then
     exec "$command"
   fi
   exec "$command" "${args[@]}"
+}
+
+_trim_ws() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
+_load_safe_secrets_env() {
+  local path="$1"
+  local raw line key value first last
+  while IFS= read -r raw || [[ -n "$raw" ]]; do
+    line="$(_trim_ws "$raw")"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    if [[ ! "$line" =~ ^export[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+      log_warn "run: ignoring unsupported secrets.env line"
+      continue
+    fi
+    key="${BASH_REMATCH[1]}"
+    value="$(_trim_ws "${BASH_REMATCH[2]}")"
+    first="${value:0:1}"
+    last="${value: -1}"
+    if [[ ${#value} -ge 2 && ( ( "$first" == '"' && "$last" == '"' ) || ( "$first" == "'" && "$last" == "'" ) ) ]]; then
+      value="${value:1:${#value}-2}"
+    fi
+    export "$key=$value"
+  done < "$path"
 }
 
 # ensure_secrets_env — create secrets.env with mode 0600 if not present

@@ -29,14 +29,39 @@ def _resolve_root() -> Path:
 ROOT = _resolve_root()
 REGISTRY_FILE = ROOT / "registry.json"
 SECRETS_FILE = ROOT / "secrets.env"
+SETTINGS_FILE = ROOT / "settings.env"
 CHAT_ROOT = ROOT / "chat-runtime"
 LOCK_FILE = CHAT_ROOT / ".lock"
 SESSION_CAP = 4
-IDLE_TIMEOUT = int(os.environ.get("MCP_AGENT_MANAGER_CHAT_IDLE_TIMEOUT", "300"))
 PREVIEW_LIMIT = 12 * 1024
 
+
+def _load_chat_idle_timeout() -> int:
+    raw = os.environ.get("MCP_AGENT_MANAGER_CHAT_IDLE_TIMEOUT", "").strip()
+    source = "env" if raw else "default"
+    if not raw and SETTINGS_FILE.exists():
+        for line in SETTINGS_FILE.read_text().splitlines():
+            line = line.strip()
+            if not line.startswith("export MCP_AGENT_MANAGER_CHAT_IDLE_TIMEOUT="):
+                continue
+            raw = line.split("=", 1)[1].strip().strip('"').strip("'")
+            source = "settings"
+    if not raw:
+        raw = "300"
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError("MCP_AGENT_MANAGER_CHAT_IDLE_TIMEOUT must be seconds between 30 and 86400") from exc
+    minimum = 1 if source == "env" else 30
+    if value < minimum or value > 86400:
+        raise ValueError("MCP_AGENT_MANAGER_CHAT_IDLE_TIMEOUT must be seconds between 30 and 86400")
+    return value
+
+
+IDLE_TIMEOUT = _load_chat_idle_timeout()
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from mcp_stdio_client import MCPClientError, MCPStdioClient, load_export_env, redact_json  # noqa: E402
+from mcp_stdio_client import MCPClientError, MCPStdioClient, load_export_env, load_initialize_timeout, redact_json  # noqa: E402
 from mcp_tool_cache import load_cache, write_fresh  # noqa: E402
 
 
@@ -200,7 +225,7 @@ def run_session(name: str) -> int:
         args=args,
         env=runtime_env,
         timeout=IDLE_TIMEOUT,
-        initialize_timeout=8,
+        initialize_timeout=load_initialize_timeout(),
     )
     tools_cache: List[Dict[str, Any]] = []
     closed = False
@@ -328,7 +353,7 @@ def run_session(name: str) -> int:
 
 def main() -> int:
     if len(sys.argv) < 2 or sys.argv[1] in {"--help", "-h"}:
-        print("Usage: mcp-agent-manager chat-session <name>")
+        print("Usage: mcp-agent-manager session <mcp-name>")
         return 0
 
     try:

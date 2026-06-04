@@ -12,7 +12,7 @@ $HOME/.local/bin/mcp-agent-manager tools search "instance" \
   --name demo-mcp-site-1
 
 # Step 2: open bridge
-mcp-agent-manager chat-session demo-mcp-site-1
+mcp-agent-manager session demo-mcp-site-1
 
 # Step 3: get schema if arguments unclear
 {"id":"1","action":"tools.schema","tool":"<tool_name_from_search>"}
@@ -29,7 +29,7 @@ mcp-agent-manager chat-session demo-mcp-site-1
 Skip search and schema — open bridge and call directly:
 
 ```bash
-mcp-agent-manager chat-session demo-mcp-site-1
+mcp-agent-manager session demo-mcp-site-1
 ```
 
 ```json
@@ -53,7 +53,7 @@ User: "Có bao nhiêu VM đang chạy tại DEMO_SITE_1?"
 → domain: OpenStack, site: DEMO_SITE_1
 → name: demo-mcp-site-1
 → tools search "instance list" --name demo-mcp-site-1
-→ chat-session demo-mcp-site-1
+→ session demo-mcp-site-1
 → tools.call list_instances (hoặc equivalent) với filter status=ACTIVE
 → đọc output, close
 ```
@@ -65,7 +65,7 @@ User: "Chi tiết VM compute-demo-4-01.dc.local"
 → demo-alias-4 = topology alias → DEMO_SITE_4
 → name: demo-mcp-site-4
 → tools search "instance detail" --name demo-mcp-site-4
-→ chat-session demo-mcp-site-4
+→ session demo-mcp-site-4
 → tools.call get_instance với name="compute-demo-4-01.dc.local"
 → đọc output, close
 ```
@@ -75,9 +75,9 @@ User: "Chi tiết VM compute-demo-4-01.dc.local"
 ```text
 User: "Tìm log lỗi payment trong 1 giờ qua"
 → domain: Grafana/Loki
-→ name: teleport-mcp-internal-grafana-viewer
-→ tools search "logs loki" --name teleport-mcp-internal-grafana-viewer
-→ chat-session teleport-mcp-internal-grafana-viewer
+→ name: example-grafana-logs
+→ tools search "logs loki" --name example-grafana-logs
+→ session example-grafana-logs
 → tools.call query_loki với query="{service="payment"} |= "error"", range=1h
 → đọc output (có thể có output_file), close
 ```
@@ -91,7 +91,7 @@ User: "Tìm note về octavia trong vault"
 → domain: Obsidian
 → name: obsidian-local
 → tools search "note search" --name obsidian-local
-→ chat-session obsidian-local
+→ session obsidian-local
 → tools.call search_notes với query="octavia"
 → đọc output, close
 ```
@@ -104,7 +104,7 @@ User: "Kiểm tra workflow n8n đang lỗi"
 → mcp-agent-manager list → n8n entry: status=unavailable/quarantined
 → Báo: "n8n MCP hiện không khỏe (quarantined). Không tự enable."
 → Recovery: mcp-agent-manager sync --apply --target all
-→ Không mở chat-session, không gọi tools.
+→ Không mở session, không gọi tools.
 ```
 
 ---
@@ -114,7 +114,7 @@ User: "Kiểm tra workflow n8n đang lỗi"
 ```text
 # 1. Start bridge
 Desktop Commander:start_process(
-  command="$HOME/.local/bin/mcp-agent-manager chat-session <name>",
+  command="$HOME/.local/bin/mcp-agent-manager session <mcp-name>",
   timeout_ms=10000
 )
 → lưu PID

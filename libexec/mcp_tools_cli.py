@@ -19,7 +19,7 @@ REGISTRY_FILE = ROOT / "registry.json"
 SECRETS_FILE = ROOT / "secrets.env"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from mcp_stdio_client import MCPClientError, MCPStdioClient, load_export_env  # noqa: E402
+from mcp_stdio_client import MCPClientError, MCPStdioClient, load_export_env, load_initialize_timeout  # noqa: E402
 from mcp_tool_cache import (  # noqa: E402
     INDEX_FILE,
     load_cache,
@@ -87,7 +87,8 @@ def refresh_one(name: str, entry: Dict[str, Any]) -> int:
         raise MCPClientError(f"tools refresh: name '{name}' command must be non-empty string")
     if not shutil.which(command) and not Path(command).is_file():
         raise MCPClientError(f"tools refresh: command not found: {command}")
-    client = MCPStdioClient(command=command, args=args, env=resolve_env(entry), timeout=8, initialize_timeout=8)
+    init_timeout = load_initialize_timeout()
+    client = MCPStdioClient(command=command, args=args, env=resolve_env(entry), timeout=init_timeout, initialize_timeout=init_timeout)
     try:
         client.open()
         tools = client.list_tools()
@@ -148,6 +149,8 @@ def _cmd_search_legacy(args: argparse.Namespace) -> int:
 def cmd_search(args: argparse.Namespace) -> int:
     if args.name:
         validate_name(args.name)
+    registry = load_registry()
+    servers = registry.get("personal_mcp_servers", {})
     index = load_index()
     if index is None:
         print("[tools] WARNING: index not found. Run 'tools index --apply' to build it.", file=sys.stderr)
@@ -156,6 +159,9 @@ def cmd_search(args: argparse.Namespace) -> int:
     for entry in index:
         name = entry.get("name", "")
         if args.name and name != args.name:
+            continue
+        server = servers.get(name, {})
+        if not args.all and not (server.get("enabled") is True and server.get("transport") == "stdio"):
             continue
         score = score_tool(args.query, entry)
         if score > 0:
@@ -208,13 +214,13 @@ def cmd_index(args: argparse.Namespace) -> int:
     registry = load_registry()
     if not args.apply:
         count = 0
-        for name, entry in eligible(registry):
+        for name, entry in eligible(registry, show_all=args.all):
             cache = load_cache(name, entry=entry, allow_stale=False)
             if cache:
                 count += len(cache.get("tools", []))
         print(f"[tools] Would write {count} entries to index. Pass --apply to rebuild.")
         return 0
-    count = write_index(registry)
+    count = write_index(registry, show_all=args.all)
     print(f"[tools] index rebuilt: {count} entries → {INDEX_FILE}")
     return 0
 
@@ -236,6 +242,7 @@ def parser() -> argparse.ArgumentParser:
     refresh_parser.add_argument("--apply", action="store_true")
     index_parser = sub.add_parser("index", help="rebuild global search index from cache files")
     index_parser.add_argument("--apply", action="store_true", help="write tool-index.jsonl (default: preview)")
+    index_parser.add_argument("--all", action="store_true", help="include inactive and quarantined entries")
     return root
 
 

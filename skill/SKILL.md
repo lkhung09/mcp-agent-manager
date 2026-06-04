@@ -19,7 +19,7 @@ Route user runtime requests to one scoped MCP and call the best matching tool.
 3. If ambiguous, ask user once. Do not guess or fan-out.
 4. Start bridge:
    ```bash
-   mcp-agent-manager chat-session <name>
+   mcp-agent-manager session <mcp-name>
    ```
 5. If arguments unclear, request `tools.schema`.
 6. Otherwise call `tools.call` directly.

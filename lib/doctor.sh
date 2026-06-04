@@ -33,11 +33,12 @@ _check_runtime_dirs() {
 }
 
 _check_jq() {
-  if [[ ! -x /usr/bin/jq ]]; then
-    _doctor_fail "jq not found at /usr/bin/jq"
+  local jq_path
+  if ! jq_path="$(jq_bin)"; then
+    _doctor_fail "jq not found in PATH"
     return
   fi
-  _doctor_ok "jq /usr/bin/jq"
+  _doctor_ok "jq ${jq_path}"
 }
 
 _check_tsh() {

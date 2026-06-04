@@ -28,6 +28,19 @@ class MCPRPCError(MCPClientError):
         super().__init__(f"JSON-RPC error: {error}")
 
 
+def load_initialize_timeout(default: float = 8.0) -> float:
+    raw = os.environ.get("MCP_AGENT_MANAGER_INIT_TIMEOUT", "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise MCPClientError("MCP_AGENT_MANAGER_INIT_TIMEOUT must be seconds between 1 and 120") from exc
+    if value < 1 or value > 120:
+        raise MCPClientError("MCP_AGENT_MANAGER_INIT_TIMEOUT must be seconds between 1 and 120")
+    return value
+
+
 def load_export_env(path: str | os.PathLike[str]) -> Dict[str, str]:
     """Load simple `export KEY=value` lines from secrets.env."""
     env: Dict[str, str] = {}

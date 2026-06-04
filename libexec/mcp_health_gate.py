@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-from mcp_stdio_client import MCPStdioClient
+from mcp_stdio_client import MCPStdioClient, load_initialize_timeout
 
 ERROR_LIMIT = 512
 
@@ -32,14 +32,15 @@ def probe_teleport_stdio(
     name: str,
     proxy: str,
     tsh_bin: str = "tsh",
-    timeout: float = 8.0,
+    timeout: float | None = None,
 ) -> Dict[str, Any]:
+    init_timeout = timeout if timeout is not None else load_initialize_timeout()
     client = MCPStdioClient(
         command=tsh_bin,
         args=["mcp", "connect", f"--proxy={proxy}", name],
         env={"TELEPORT_DEBUG": "false"},
-        timeout=timeout,
-        initialize_timeout=timeout,
+        timeout=init_timeout,
+        initialize_timeout=init_timeout,
     )
     checked_at = utc_now()
     try:

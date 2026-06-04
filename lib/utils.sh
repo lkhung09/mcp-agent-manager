@@ -77,14 +77,41 @@ semver_lt() {
 # Copies file to ~/.config/mcp-agent-manager/backups/<timestamp>/<basename>
 backup_file() {
   local src="${1:?backup_file: missing file path}"
+  if [[ ! -e "$src" ]]; then
+    log_info "Backup skipped; file not found: ${src}"
+    return 0
+  fi
   local ts
-  ts="$(date +%Y%m%dT%H%M%S)"
+  ts="$(date +%Y%m%dT%H%M%S)-$$"
   local dest_dir="${HOME}/.config/mcp-agent-manager/backups/${ts}"
   mkdir -p "${HOME}/.config/mcp-agent-manager/backups"
   chmod 700 "${HOME}/.config/mcp-agent-manager" "${HOME}/.config/mcp-agent-manager/backups"
+  while [[ -e "$dest_dir" ]]; do
+    dest_dir="${HOME}/.config/mcp-agent-manager/backups/${ts}-${RANDOM:-0}"
+  done
   mkdir -p "$dest_dir"
   chmod 700 "$dest_dir"
   cp "$src" "${dest_dir}/$(basename "$src")"
   chmod 600 "${dest_dir}/$(basename "$src")"
   log_info "Backed up $(basename "$src") → ${dest_dir}/"
+}
+
+jq_bin() {
+  if [[ -n "${MCP_AGENT_MANAGER_JQ:-}" ]]; then
+    if [[ -x "$MCP_AGENT_MANAGER_JQ" ]]; then
+      printf '%s\n' "$MCP_AGENT_MANAGER_JQ"
+      return 0
+    fi
+    return 1
+  fi
+  command -v jq 2>/dev/null
+}
+
+require_jq() {
+  local jq_path
+  if ! jq_path="$(jq_bin)"; then
+    log_error "jq not found in PATH"
+    return 1
+  fi
+  printf '%s\n' "$jq_path"
 }

@@ -37,8 +37,11 @@ cmd_apply() {
 
   # Track backup dir for auto-restore
   local backup_ts
-  backup_ts=$(date +%s)
+  backup_ts="$(date +%s)-$$"
   local backup_dir="${REGISTRY_DIR}/backups/${backup_ts}"
+  while [[ -e "$backup_dir" ]]; do
+    backup_dir="${REGISTRY_DIR}/backups/${backup_ts}-${RANDOM:-0}"
+  done
 
   # Wrap entire flow — auto-restore on any failure
   if ! _apply_run "$backup_dir" "$allow_smoke_warn"; then
@@ -79,7 +82,9 @@ _apply_preview() {
 }
 
 _apply_list_smoke_targets() {
-  /usr/bin/jq -r '
+  local jq
+  jq="$(require_jq)" || return 1
+  "$jq" -r '
     .personal_mcp_servers
     | to_entries[]
     | select(.value.enabled == true and .value.transport == "stdio")
@@ -294,7 +299,8 @@ for name, entry in targets:
 
     client = None
     try:
-        client = MCPStdioClient(command=command, args=args, env=materialize_env(entry), timeout=8.0)
+        init_timeout = float(os.environ.get("MCP_AGENT_MANAGER_INIT_TIMEOUT", "8"))
+        client = MCPStdioClient(command=command, args=args, env=materialize_env(entry), timeout=init_timeout, initialize_timeout=init_timeout)
         client.open()
         tools = client.list_tools()
         if isinstance(tools, list):
@@ -402,6 +408,38 @@ if os.path.exists(codex_toml):
         with open(codex_toml) as f:
             lines = f.readlines()
 
+        def split_toml_header(section):
+            parts = []
+            current = []
+            in_quote = False
+            quote = ""
+            escaped = False
+            for ch in section:
+                if escaped:
+                    current.append(ch)
+                    escaped = False
+                    continue
+                if in_quote:
+                    if ch == "\\":
+                        escaped = True
+                        current.append(ch)
+                    elif ch == quote:
+                        in_quote = False
+                    else:
+                        current.append(ch)
+                    continue
+                if ch in ("'", '"'):
+                    in_quote = True
+                    quote = ch
+                    continue
+                if ch == ".":
+                    parts.append("".join(current).strip())
+                    current = []
+                    continue
+                current.append(ch)
+            parts.append("".join(current).strip())
+            return parts
+
         result = []
         skip = False
         for line in lines:
@@ -409,7 +447,7 @@ if os.path.exists(codex_toml):
             # Start of a section header — ALWAYS re-evaluate skip flag
             if stripped.startswith("[") and stripped.endswith("]"):
                 section = stripped[1:-1].strip()
-                parts = section.split(".")
+                parts = split_toml_header(section)
                 is_managed = (
                     len(parts) >= 2
                     and parts[0] == "mcp_servers"

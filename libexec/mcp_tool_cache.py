@@ -159,6 +159,8 @@ def write_index(registry: Dict[str, Any], show_all: bool = False) -> int:
     servers = registry.get("personal_mcp_servers", {})
     for name in sorted(servers):
         entry = servers[name]
+        if not show_all and not (entry.get("enabled") is True and entry.get("transport") == "stdio"):
+            continue
         cache = load_cache(name, entry=entry, allow_stale=show_all)
         if not cache:
             continue

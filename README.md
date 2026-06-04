@@ -1,205 +1,223 @@
 # mcp-agent-manager
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#quick-start)
+[![Shell](https://img.shields.io/badge/shell-bash%203.2%2B-green)](#quick-start)
+
+> **Keep your AI context small. Give each agent exactly one MCP.**
+
 [Tiếng Việt](README.vi.md)
 
-Local-first MCP manager for Claude Code, Codex, and other agent runtimes that can use scoped agents.
+---
 
-It keeps MCP tools out of the main AI session. Tools are attached only to the small agent that needs them.
+## Contents
 
-## What it is
+- [The problem](#the-problem)
+- [The fix](#the-fix)
+- [What it does](#what-it-does)
+- [Quick start](#quick-start)
+- [Demo](#demo)
+- [Runtime modes](#runtime-modes)
+- [Day-to-day commands](#day-to-day-commands)
+- [Safety model](#safety-model)
+- [Supported features](#supported-features)
+- [Undo](#undo)
+- [Contributing](#contributing)
+- [More docs](#more-docs)
 
-- A small local CLI for managing MCP servers.
-- A renderer for scoped Claude Code and Codex agents.
-- A lightweight way to keep AI context smaller.
-- A personal-first project you can inspect and change without running a platform.
+---
+
+## The problem
+
+Every MCP server you add dumps its full tool list into your AI session. Ten servers × fifty tools = hundreds of schema lines crowding the context window before you even ask a question.
+
+```
+Main session  →  MCP A (50 tools)
+              →  MCP B (80 tools)
+              →  MCP C (30 tools)   ← all loaded, all the time
+              →  MCP D (40 tools)
+```
+
+## The fix
+
+`mcp-agent-manager` renders a tiny scoped agent for each MCP. The main session stays clean. Tools load only when the right agent is called.
+
+```mermaid
+graph LR
+  subgraph BEFORE["Without  —  bloated main session"]
+    direction TB
+    S1["Claude / Codex"] --> T1["MCP A  · 50 tools"]
+    S1 --> T2["MCP B  · 80 tools"]
+    S1 --> T3["MCP C  · 30 tools"]
+    S1 --> T4["MCP D  · 40 tools"]
+  end
+
+  BEFORE -- "mcp-agent-manager" --> AFTER
+
+  subgraph AFTER["With  —  scoped agents"]
+    direction TB
+    S2["Claude / Codex"] --> A1["Agent A"]
+    S2 --> A2["Agent B"]
+    A1 --> M1["MCP A only"]
+    A2 --> M2["MCP B only"]
+  end
+```
+
+---
+
+## What it does
+
+- Imports your existing MCP globals from `~/.claude.json` and `~/.codex/config.toml`
+- Renders scoped agent files for Claude Code and Codex
+- Manages process lifetime for STDIO and HTTP-transport MCPs
+- Caches redacted `tools/list` metadata so the AI can search without connecting
+- Optional Teleport catalog sync with automatic quarantine
 
 ## What it is not
 
-- Not an enterprise MCP gateway.
-- Not a Docker or Kubernetes system.
-- Not a hosted service.
-- Not tied to Teleport. Teleport sync is optional.
+- Not an enterprise gateway or hosted service
+- Not Docker or Kubernetes
+- Not tied to Teleport — sync is optional
 
-## Who it is for
-
-- People who use many MCP servers and want less context noise.
-- People who want local files, simple commands, and preview-first changes.
-- People who use Claude Code, Codex, or another runtime with scoped agents/subagents.
-
-## How it works
-
-```mermaid
-flowchart LR
-  User[You] --> CLI[mcp-agent-manager]
-  CLI --> Registry[Local registry]
-
-  subgraph MainFlow[Main supported flow today]
-    Registry --> Claude[Claude Code agent]
-    Registry --> Codex[Codex agent]
-    Claude --> OneMCP[One scoped MCP]
-    Codex --> OneMCP
-    OneMCP --> Lifetime[MCP process lifetime]
-    Lifetime --> Tools[Real tools / APIs]
-  end
-
-  subgraph LocalExtras[Local helpers]
-    Registry --> Cache[Redacted tool metadata cache]
-    SiteMap[Optional site-map.json] --> Registry
-    Teleport[Optional Teleport sync] --> Registry
-  end
-
-  CLI -. keeps parent context small .-> Clean[No giant MCP tool schema<br/>in main chat]
-```
-
-Main idea: Claude Code and Codex stay light. `mcp-agent-manager` picks a scoped agent, gives it one MCP, and keeps process lifetime controlled.
-
-## MCP process lifetime
-
-There are two runtime modes:
-
-| Mode | How long the MCP process lives |
-|---|---|
-| `run <name>` | Lives as long as the caller runtime keeps it open. When the runtime stops, the MCP process stops. |
-| `chat-session <name>` | Lives until `close`, stdin closes, or idle timeout is reached. Default idle timeout: `300` seconds. |
-
-Override chat-session idle timeout:
-
-```bash
-MCP_AGENT_MANAGER_CHAT_IDLE_TIMEOUT=900 mcp-agent-manager chat-session <name>
-```
+---
 
 ## Quick start
 
-### 0. Install requirements
+### Requirements
 
-macOS:
-
+**macOS**
 ```bash
-brew install git python jq zip ruby
+brew install git python jq zip
 ```
 
-Ubuntu/Debian:
-
+**Ubuntu / Debian**
 ```bash
-sudo apt update
-sudo apt install -y bash git python3 jq zip ruby
+sudo apt update && sudo apt install -y bash git python3 jq zip
 ```
 
-The one-command installer can install Ubuntu/Debian packages automatically with `apt-get`.
+### Install
 
-Teleport `tsh` is optional on both platforms. Install it only if you use `sync`.
-
-### 1. Install
-
-One-command install:
-
+One command:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lkhung09/mcp-agent-manager/main/install.sh | sh
 ```
 
-If you prefer to read the installer first:
-
+Prefer to read first:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lkhung09/mcp-agent-manager/main/install.sh -o install.sh
 less install.sh
 sh install.sh
 ```
 
-Manual install:
-
+Manual:
 ```bash
 git clone https://github.com/lkhung09/mcp-agent-manager.git
 cd mcp-agent-manager
-./bin/mcp-agent-manager doctor
 ./bin/mcp-agent-manager install --apply
 ```
 
-After first install in an existing terminal:
+Then reload your shell:
+```bash
+source ~/.zshrc    # macOS zsh
+source ~/.bashrc   # Linux bash
+```
+
+### First run
+
+Every command previews before it changes anything. Add `--apply` when the preview looks right.
 
 ```bash
-source ~/.zshrc   # macOS zsh
-source ~/.bashrc  # Ubuntu bash
+# 1. Check your environment
+mcp-agent-manager doctor
+
+# 2. Import existing MCP entries
+mcp-agent-manager bootstrap          # preview
+mcp-agent-manager bootstrap --apply  # write
+
+# 3. Render scoped agents
+mcp-agent-manager render             # preview
+mcp-agent-manager render --apply     # write
+
+# 4. Full cutover (backup → render → validate → smoke → cutover)
+mcp-agent-manager apply              # preview
+mcp-agent-manager apply --apply      # execute
 ```
 
-### 2. Run
+---
 
-Preview before changing files:
+## Demo
+
+```
+$ mcp-agent-manager doctor
+[doctor] ✓ jq /path/to/jq
+[doctor] ✓ claude /path/to/claude
+[doctor] ✓ codex /path/to/codex
+[doctor] ✓ ~/.claude/agents writable
+[doctor] ✓ ~/.codex/agents writable
+
+$ mcp-agent-manager list
+SLUG                                          ENABLED  STATUS       TARGET   DESCRIPTION
+----                                          -------  ------       ------   -----------
+filesystem                                    true     active       all      Use for filesystem MCP operations.
+notebooklm                                    true     active       claude   Use for notebooklm MCP operations.
+openai                                        true     active       codex    Use for openai MCP operations.
+teleport-han02                                false    disabled     all      Use for authorized Teleport MCP operations.
+
+$ mcp-agent-manager tools search "read file"
+SCORE NAME                                          CACHE    TOOL                                   DESCRIPTION
+----- ----                                          -----    ----                                   -----------
+9     filesystem                                    fresh    read_file                              Read the complete contents of a file...
+6     filesystem                                    fresh    read_multiple_files                    Read multiple files simultaneously...
+```
+
+---
+
+## Runtime modes
+
+| Command | MCP process lifetime |
+|---|---|
+| `run <mcp-name>` | Lives as long as the calling agent keeps it open |
+| `session <mcp-name>` | Lives until `close`, stdin closes, or idle timeout (default 300s) |
+
+Override idle timeout:
+```bash
+MCP_AGENT_MANAGER_CHAT_IDLE_TIMEOUT=900 mcp-agent-manager session <mcp-name>
+```
+
+---
+
+## Day-to-day commands
 
 ```bash
-./bin/mcp-agent-manager bootstrap
-./bin/mcp-agent-manager render
+mcp-agent-manager list [--all]                          # show registry
+mcp-agent-manager enable  <name> [--apply]              # enable one MCP
+mcp-agent-manager disable <name> [--apply]              # disable one MCP
+mcp-agent-manager remove  <name> [--apply]              # remove one MCP
+
+mcp-agent-manager tools list                            # list cached tool metadata
+mcp-agent-manager tools search <query>                  # search tool descriptions
+mcp-agent-manager tools refresh <name> --apply          # refresh one entry
+mcp-agent-manager tools refresh --all  --apply          # refresh all
+
+mcp-agent-manager sync [--target all|claude|codex] [--apply]   # Teleport sync
 ```
 
-Apply when preview looks right:
+---
 
-```bash
-./bin/mcp-agent-manager bootstrap --apply
-./bin/mcp-agent-manager render --apply
-```
+## Safety model
 
-### 3. Check
+| Behavior | Default |
+|---|---|
+| Commands preview before writing | Always |
+| File writes require `--apply` | Always |
+| Generated files carry managed markers | Always |
+| Secrets stay in `~/.config/mcp-agent-manager/secrets.env` | Mode 0600 |
+| Auto-restore backup on any step failure | During `apply --apply` |
+| HTTP-transport credentials stored redacted only | Always |
 
-```bash
-./bin/mcp-agent-manager doctor
-./bin/mcp-agent-manager list --all
-python3 -m unittest discover -s tests -v
-```
+---
 
-## Safe by default
-
-- Most commands preview first.
-- File changes need `--apply`.
-- Generated files live under managed markers.
-- Local runtime state lives under `~/.config/mcp-agent-manager/`.
-- Secrets stay in `~/.config/mcp-agent-manager/secrets.env` on your machine.
-- Optional site routing stays in `~/.config/mcp-agent-manager/site-map.json`.
-- `curl | sh` only clones or updates this repo, then runs `install --apply`.
-
-## Remove / Undo
-
-To stop using generated agents:
-
-```bash
-./bin/mcp-agent-manager disable <name> --apply
-./bin/mcp-agent-manager render --apply
-```
-
-To remove one personal MCP entry:
-
-```bash
-./bin/mcp-agent-manager remove <name> --apply
-```
-
-To remove installed links manually:
-
-```bash
-rm -f ~/.local/bin/mcp-agent-manager
-rm -f ~/.claude/skills/mcp-agent-manager
-rm -f ~/.agents/skills/mcp-agent-manager
-rm -f ~/.codex/skills/mcp-agent-manager
-```
-
-This does not remove your local config at `~/.config/mcp-agent-manager/`.
-
-## Optional site map
-
-Site routing is optional. If you need it, start from:
-
-```text
-examples/site-map.example.json
-```
-
-Put your private copy here:
-
-```text
-~/.config/mcp-agent-manager/site-map.json
-```
-
-Do not commit real company hostnames, site names, tokens, or credentials.
-
-## Features
-
-### Supported now
+## Supported features
 
 | Feature | Status |
 |---|---|
@@ -208,71 +226,64 @@ Do not commit real company hostnames, site names, tokens, or credentials.
 | Claude Code agent rendering | Supported |
 | Codex agent rendering | Supported |
 | Scoped one-MCP runner | Supported |
-| Redacted `tools/list` metadata cache | Supported |
+| Redacted `tools/list` metadata cache + search index | Supported |
 | Claude Chat JSONL bridge | Supported |
-| Configurable chat-session idle timeout | Supported |
+| Configurable session idle timeout | Supported |
 | Optional site map routing | Supported |
 | Optional Teleport catalog sync | Supported |
 | Quarantine unhealthy Teleport MCP entries | Supported |
-| Fresh `HOME` portability tests | Supported |
-
-### Supported command helpers
-
-| Helper | What it does |
-|---|---|
-| `doctor` | Checks local dependencies, writable agent dirs, and installed skill links. |
-| `install` | Creates local CLI, skill links, shell PATH entry, config dir, and Desktop Chat ZIP. |
-| `bootstrap` | Imports existing Claude/Codex MCP globals into the local registry. |
-| `list` | Shows MCP names, status, target runtime, and descriptions. |
-| `render` | Generates scoped Claude Code and Codex agents. |
-| `apply` | Runs the full preview-first cutover flow. |
-| `enable`, `disable`, `remove` | Manage personal MCP registry entries. |
-| `run` | Runtime helper used by generated agents to start one scoped MCP. |
-| `chat-session` | Runtime helper for JSONL chat sessions with idle timeout. |
-| `tools list/search/refresh/index` | Inspect and refresh redacted `tools/list` metadata cache. |
-| `sync` | Optional Teleport catalog sync helper. |
-
-### Not supported yet
-
-| Feature | Status |
-|---|---|
-| `add`, `edit` commands | Planned, not implemented |
-| Web UI | Not planned for first public version |
-| Docker/Kubernetes deployment | Not planned for first public version |
-| Hosted/remote control plane | Not planned |
-| Multi-user governance | Not planned |
+| `add`, `edit` commands | Planned |
+| Hermes / OpenClaw rendering | Planned |
 | Windows support | Not tested |
-| Hermes/OpenClaw rendering | Planned direction, not implemented |
-| Automatic GitHub release workflow | Not included yet |
-| Plugin marketplace/catalog UI | Not included yet |
+| Web UI / hosted control plane | Not planned |
 
-## Advanced commands
+---
 
+## Undo
+
+Stop using generated agents:
 ```bash
-./bin/mcp-agent-manager doctor
-./bin/mcp-agent-manager list [--all]
-./bin/mcp-agent-manager bootstrap [--apply]
-./bin/mcp-agent-manager sync [--target all|claude|codex] [--apply]
-./bin/mcp-agent-manager enable <name> [--apply]
-./bin/mcp-agent-manager disable <name> [--apply]
-./bin/mcp-agent-manager remove <name> [--apply]
-./bin/mcp-agent-manager render [--apply]
-./bin/mcp-agent-manager apply [--apply] [--allow-smoke-warn]
-./bin/mcp-agent-manager run <name>
-./bin/mcp-agent-manager chat-session <name>
-./bin/mcp-agent-manager tools list [<name>] [--all]
-./bin/mcp-agent-manager tools search <query> [--name <name>] [--limit N] [--all]
-./bin/mcp-agent-manager tools refresh <name>|--all [--apply]
-./bin/mcp-agent-manager install [--apply]
+mcp-agent-manager disable <name> --apply
+mcp-agent-manager render --apply
 ```
 
-`sync --apply` is for optional Teleport-managed entries. It runs a read-only health gate. Unhealthy entries are quarantined and disabled.
+Remove one entry:
+```bash
+mcp-agent-manager remove <name> --apply
+```
 
-`tools` manages redacted `tools/list` metadata under `~/.config/mcp-agent-manager/tool-cache/`. Tool outputs are never cached.
+Remove installed links:
+```bash
+rm -f ~/.local/bin/mcp-agent-manager
+rm -f ~/.claude/skills/mcp-agent-manager
+rm -f ~/.agents/skills/mcp-agent-manager
+rm -f ~/.codex/skills/mcp-agent-manager
+```
+
+Local config at `~/.config/mcp-agent-manager/` is not removed automatically.
+
+---
+
+## Contributing
+
+```bash
+# Run tests
+python3 -m unittest discover -s tests -v
+
+# Check environment
+mcp-agent-manager doctor
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and [AGENTS.md](AGENTS.md) for AI agent rules.
+
+---
 
 ## More docs
 
-- `ARCHITECTURE.md` - short system map
-- `CODEMAP.md` - where the main code lives
-- `AGENTS.md` - rules for AI/code agents working in this repo
-- `SECURITY.md` - what must stay private
+| File | What's inside |
+|---|---|
+| `ARCHITECTURE.md` | Short system map |
+| `CODEMAP.md` | Where the main code lives |
+| `AGENTS.md` | Rules for AI agents working in this repo |
+| `SECURITY.md` | What must stay private |
+| `examples/site-map.example.json` | Starting point for optional site routing |

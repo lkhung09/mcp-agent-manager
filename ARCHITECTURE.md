@@ -27,10 +27,12 @@ flowchart LR
 
 ## Process lifetime
 
-- `run <name>` execs one MCP server and lives as long as the caller runtime keeps stdio open.
-- `chat-session <name>` keeps one MCP process open until `close`, stdin closes, or idle timeout fires.
-- Chat-session idle timeout defaults to `300s`.
-- Override with `MCP_AGENT_MANAGER_CHAT_IDLE_TIMEOUT`, for example `900`.
+- `run <mcp-name>` execs one MCP server and lives as long as the caller runtime keeps stdio open.
+- `session <mcp-name>` keeps one MCP process open until `close`, stdin closes, or idle timeout fires.
+- Session idle timeout defaults to `300s`.
+- Normal override: `mcp-agent-manager config set session-idle-timeout 900`.
+- Advanced env override still works: `MCP_AGENT_MANAGER_CHAT_IDLE_TIMEOUT=900`.
+- Slow MCP startup can use advanced env override: `MCP_AGENT_MANAGER_INIT_TIMEOUT=20`.
 
 ## Main pieces
 
@@ -39,6 +41,7 @@ flowchart LR
 - `lib/renderer_claude.sh` and `lib/renderer_codex.sh`: render agent files
 - `lib/runner.sh`: stdio wrapper for one MCP server
 - `lib/chat_runtime.sh` and `libexec/mcp_chat_session.py`: JSONL bridge for scoped chat sessions
+- `lib/config.sh`: local settings commands
 - `libexec/mcp_tool_cache.py` and `libexec/mcp_tools_cli.py`: redacted metadata cache
 - `lib/syncer_teleport.sh`: optional Teleport catalog sync
 
@@ -46,6 +49,7 @@ flowchart LR
 
 - `~/.config/mcp-agent-manager/site-map.json`: optional site map for OpenStack routing
 - `~/.config/mcp-agent-manager/secrets.env`: local runtime secrets only
+- `~/.config/mcp-agent-manager/settings.env`: simple local settings, currently chat idle timeout
 
 ## Design rules
 

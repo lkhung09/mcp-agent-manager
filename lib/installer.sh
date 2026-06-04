@@ -113,9 +113,25 @@ _ensure_shell_path() {
 
   if grep -qxF "$_LEGACY_PATH_LINE" "$_SHELL_RC"; then
     changed=1
+  else
+    local legacy_rc=$?
+    if [[ $legacy_rc -gt 1 ]]; then
+      log_error "failed reading shell rc: ${_SHELL_RC}"
+      return 1
+    fi
   fi
-  if ! grep -qxF "$_LOCAL_BIN_PATH_LINE" "$_SHELL_RC"; then
+
+  local grep_rc
+  if grep -qxF "$_LOCAL_BIN_PATH_LINE" "$_SHELL_RC"; then
+    grep_rc=0
+  else
+    grep_rc=$?
+  fi
+  if [[ $grep_rc -eq 1 ]]; then
     changed=1
+  elif [[ $grep_rc -gt 1 ]]; then
+    log_error "failed reading shell rc: ${_SHELL_RC}"
+    return 1
   fi
 
   if [[ $changed -eq 0 ]]; then
@@ -124,7 +140,17 @@ _ensure_shell_path() {
   fi
 
   backup_file "$_SHELL_RC"
-  grep -vxF "$_LEGACY_PATH_LINE" "$_SHELL_RC" > "$tmp" || true
+  local strip_rc
+  if grep -vxF "$_LEGACY_PATH_LINE" "$_SHELL_RC" > "$tmp"; then
+    strip_rc=0
+  else
+    strip_rc=$?
+  fi
+  if [[ $strip_rc -gt 1 ]]; then
+    rm -f "$tmp"
+    log_error "failed rewriting shell rc: ${_SHELL_RC}"
+    return 1
+  fi
   if ! grep -qxF "$_LOCAL_BIN_PATH_LINE" "$tmp"; then
     printf '\n# mcp-agent-manager\n%s\n' "$_LOCAL_BIN_PATH_LINE" >> "$tmp"
   fi

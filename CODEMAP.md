@@ -22,6 +22,7 @@ Use this as fast entrypoint for humans and agents.
 - `lib/doctor.sh` - health checks
 - `lib/installer.sh` - symlink and ZIP installer
 - `lib/tools.sh` - tool cache CLI wrapper
+- `lib/config.sh` - local settings CLI
 
 ## Python helpers
 

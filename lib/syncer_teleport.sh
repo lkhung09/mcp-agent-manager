@@ -66,13 +66,15 @@ USAGE
     log_error "tsh not found. Install Teleport client."
     return 1
   fi
+  local jq
+  jq="$(require_jq)" || return 1
 
   # Fetch catalog — suppress raw JSON (security: may contain rewrite headers)
   # Extract only server names via jq; never store/log raw output
   local catalog_names
   catalog_names=$(
     TELEPORT_DEBUG=false "$_TSH_BIN" mcp ls --format=json 2>/dev/null \
-      | /usr/bin/jq -er '.[].metadata.name' 2>/dev/null
+      | "$jq" -er '.[].metadata.name' 2>/dev/null
   ) || {
     log_error "tsh mcp ls failed — check Teleport login: tsh login --proxy=${_TELEPORT_PROXY}"
     return 1

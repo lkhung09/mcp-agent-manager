@@ -13,7 +13,7 @@
 - `render`: generate specialized Claude Code and Codex agents
 - `apply`: run backup, render, validate, smoke, and cutover flow
 - `run <name>`: start the scoped stdio wrapper for a registry entry
-- `chat-session <name>`: start the Claude Chat JSONL runtime bridge
+- `session <mcp-name>`: start the JSONL runtime bridge for one scoped MCP
 - `tools list`: inspect per-name tool metadata cache
 - `tools search`: search global index (tool-index.jsonl); fallback to per-name cache if index missing. CLI only — JSONL bridge `tools.search` action reads RAM cache in session (unchanged).
 - `tools refresh <name>|--all [--apply]`: preview or refresh metadata cache
@@ -45,7 +45,7 @@ Hard rule: luôn dùng exact path này. Không suy diễn executable path khác.
 | render / render --apply | 10000 | ~30s |
 | apply / apply --apply | 10000 | ~120s |
 | install / install --apply | 10000 | ~30s |
-| chat-session \<name\> | 10000 | per-action |
+| session \<mcp-name\> | 10000 | per-action |
 | tools list / search | 10000 | ~30s |
 | tools refresh / tools refresh --apply | 10000 | ~60s |
 | tools index / tools index --apply | 10000 | ~10s |

@@ -220,9 +220,11 @@ registry_list() {
     log_warn "registry.json not found. Run: mcp-agent-manager bootstrap"
     return 1
   fi
+  local jq
+  jq="$(require_jq)" || return 1
   printf '%-45s %-8s %-12s %-8s %s\n' "SLUG" "ENABLED" "STATUS" "TARGET" "DESCRIPTION"
   printf '%-45s %-8s %-12s %-8s %s\n' "----" "-------" "------" "------" "-----------"
-  /usr/bin/jq -r --argjson show_all "$show_all" '
+  "$jq" -r --argjson show_all "$show_all" '
     .personal_mcp_servers
     | to_entries[]
     | select($show_all == 1 or .value.enabled == true)
@@ -251,7 +253,9 @@ registry_get() {
   if [[ ! -f "$REGISTRY_FILE" ]]; then
     log_warn "registry.json not found."; return 1
   fi
-  /usr/bin/jq --arg name "$name" '.personal_mcp_servers[$name] // empty' "$REGISTRY_FILE"
+  local jq
+  jq="$(require_jq)" || return 1
+  "$jq" --arg name "$name" '.personal_mcp_servers[$name] // empty' "$REGISTRY_FILE"
 }
 
 registry_add() {
@@ -317,13 +321,16 @@ registry_mutate_personal() {
     return 1
   fi
 
-  if ! /usr/bin/jq -e --arg name "$name" '.personal_mcp_servers | has($name)' "$REGISTRY_FILE" >/dev/null; then
+  local jq
+  jq="$(require_jq)" || return 1
+
+  if ! "$jq" -e --arg name "$name" '.personal_mcp_servers | has($name)' "$REGISTRY_FILE" >/dev/null; then
     log_error "${action}: name not found: ${name}"
     return 1
   fi
 
   local source
-  source=$(/usr/bin/jq -r --arg name "$name" '
+  source=$("$jq" -r --arg name "$name" '
     .personal_mcp_servers[$name]
     | if has("_source") then ._source else empty end
   ' "$REGISTRY_FILE")
@@ -333,7 +340,7 @@ registry_mutate_personal() {
   fi
 
   local enabled
-  enabled=$(/usr/bin/jq -r --arg name "$name" '.personal_mcp_servers[$name].enabled == true' "$REGISTRY_FILE")
+  enabled=$("$jq" -r --arg name "$name" '.personal_mcp_servers[$name].enabled == true' "$REGISTRY_FILE")
   if [[ "$action" == "enable" && "$enabled" == "true" ]]; then
     printf '[registry] NOOP: %s already enabled\n' "$name"
     return 0

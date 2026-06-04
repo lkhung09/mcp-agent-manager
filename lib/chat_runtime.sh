@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # lib/chat_runtime.sh — Claude Chat runtime bridge
 
-# cmd_chat_session <name>
+# cmd_chat_session <mcp-name>
 # Start scoped JSONL bridge for Claude Chat/Desktop Commander.
 cmd_chat_session() {
   local name="${1:-}"
   if [[ -z "$name" ]]; then
-    log_error "chat-session: missing name. Usage: mcp-agent-manager chat-session <name>"
+    log_error "session: missing mcp-name. Usage: mcp-agent-manager session <mcp-name>"
     return 1
   fi
 
@@ -15,7 +15,7 @@ cmd_chat_session() {
   local py_bridge="${script_dir}/libexec/mcp_chat_session.py"
 
   if [[ ! -f "$py_bridge" ]]; then
-    log_error "chat-session: bridge not found at ${py_bridge}"
+    log_error "session: bridge not found at ${py_bridge}"
     return 1
   fi
 

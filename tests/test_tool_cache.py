@@ -58,7 +58,12 @@ class ToolCacheTests(unittest.TestCase):
             "env": {"TOOLS_LIST_MARKER": str(self.marker), "API_TOKEN": "${SECRET_REF}"},
             "target": "all",
         }
-        self.registry = {"personal_mcp_servers": {"fixture": self.entry}}
+        self.disabled_entry = {
+            **self.entry,
+            "enabled": False,
+            "env": {"TOOLS_LIST_MARKER": str(self.marker)},
+        }
+        self.registry = {"personal_mcp_servers": {"fixture": self.entry, "disabled": self.disabled_entry}}
         (self.root / "registry.json").write_text(json.dumps(self.registry))
         (self.root / "secrets.env").write_text('export SECRET_REF="secret-value"\n')
         self.env = {**os.environ, "HOME": str(self.home), "PYTHONDONTWRITEBYTECODE": "1"}
@@ -110,6 +115,32 @@ class ToolCacheTests(unittest.TestCase):
         self.assertEqual(traversal.returncode, 1)
         ambiguous = self.run_mam("tools", "refresh", "fixture", "--all")
         self.assertEqual(ambiguous.returncode, 1)
+
+    def test_index_and_search_skip_disabled_servers_by_default(self) -> None:
+        disabled_cache = self.root / "tool-cache" / "disabled.json"
+        disabled_cache.parent.mkdir(mode=0o700, exist_ok=True)
+        disabled_cache.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "name": "disabled",
+                    "status": "fresh",
+                    "registry_fingerprint": cache.registry_fingerprint(self.disabled_entry),
+                    "tools": [{"name": "disabled-only", "description": "hidden disabled tool", "inputSchema": {}}],
+                }
+            )
+            + "\n"
+        )
+        disabled_cache.chmod(0o600)
+
+        indexed = self.run_mam("tools", "index", "--apply")
+        self.assertEqual(indexed.returncode, 0, indexed.stderr)
+        index_text = (self.root / "tool-index.jsonl").read_text() if (self.root / "tool-index.jsonl").exists() else ""
+        self.assertNotIn("disabled-only", index_text)
+
+        searched = self.run_mam("tools", "search", "disabled-only")
+        self.assertEqual(searched.returncode, 0, searched.stderr)
+        self.assertNotIn("disabled-only", searched.stdout)
 
     def test_bridge_lazy_fill_then_reuse_and_direct_unknown_call(self) -> None:
         requests = (

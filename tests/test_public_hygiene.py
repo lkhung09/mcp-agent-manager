@@ -8,6 +8,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,11 +16,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MAM = ROOT / "bin" / "mcp-agent-manager"
 BAD_ROOT = "/Users/" + "kimhung/Documents/MCP/" + "mcp-agent-manager/"
+BAD_ROOT_IS_CURRENT_REPO = ROOT.resolve() == Path(BAD_ROOT).resolve()
 
 
 def write_executable(path: Path, content: str) -> None:
     path.write_text(content)
     path.chmod(0o755)
+
+
+def assert_no_private_source_leak(testcase: unittest.TestCase, text: str) -> None:
+    if BAD_ROOT_IS_CURRENT_REPO:
+        return
+    testcase.assertNotIn(BAD_ROOT, text)
 
 
 class PublicHygieneTests(unittest.TestCase):
@@ -33,99 +41,90 @@ class PublicHygieneTests(unittest.TestCase):
         self.assertIn("[English](README.md)", text)
 
         required = [
-            "## Đây là gì",
+            "## Vấn đề",
+            "## Giải pháp",
+            "## Làm được gì",
             "## Không phải là gì",
-            "## Phù hợp với ai",
-            "## Cách hoạt động",
-            "## MCP process sống bao lâu",
-            "### 0. Yêu cầu cài đặt",
-            "### 1. Cài đặt",
-            "### 2. Chạy",
-            "### 3. Kiểm tra",
-            "## Gỡ / quay lui",
+            "## Bắt đầu nhanh",
+            "### Yêu cầu",
+            "### Cài đặt",
+            "### Lần chạy đầu tiên",
+            "## Gỡ cài đặt",
             "## Tính năng",
-            "### Đang hỗ trợ",
-            "### Helper command đang hỗ trợ",
-            "### Chưa hỗ trợ",
+            "## Vòng đời MCP process",
         ]
         for item in required:
             self.assertIn(item, text)
 
         self.assertIn("```mermaid", text)
-        self.assertIn("Luồng chính đang hỗ trợ", text)
-        self.assertIn("Claude Code agent", text)
-        self.assertIn("Codex agent", text)
-        self.assertIn("One scoped MCP", text)
+        self.assertIn("Có dùng  —  scoped agents", text)
+        self.assertIn("Claude / Codex", text)
+        self.assertIn("Chỉ MCP A", text)
         self.assertIn("MCP_AGENT_MANAGER_CHAT_IDLE_TIMEOUT", text)
-        self.assertIn("Default idle timeout: `300` giây", text)
+        self.assertIn("mặc định 300s", text)
         self.assertIn("curl -fsSL", text)
         self.assertIn("raw.githubusercontent.com/lkhung09/mcp-agent-manager/main/install.sh", text)
         self.assertIn("https://github.com/lkhung09/mcp-agent-manager.git", text)
         self.assertNotIn("<owner>", text)
         self.assertNotIn("<your-fork-or-clone-url>", text)
-        self.assertIn("brew install git python jq zip ruby", text)
-        self.assertIn("sudo apt install -y bash git python3 jq zip ruby", text)
-        self.assertIn("source ~/.bashrc  # Ubuntu bash", text)
-        self.assertIn("`doctor`", text)
-        self.assertIn("`tools list/search/refresh/index`", text)
-        self.assertIn("`sync`", text)
-        self.assertIn("`add`, `edit` commands", text)
-        self.assertIn("Hermes/OpenClaw rendering", text)
+        self.assertIn("brew install git python jq zip", text)
+        self.assertIn("sudo apt update && sudo apt install -y bash git python3 jq zip", text)
+        self.assertIn("source ~/.bashrc   # Linux bash", text)
+        self.assertIn("mcp-agent-manager doctor", text)
+        self.assertIn("mcp-agent-manager tools search", text)
+        self.assertIn("mcp-agent-manager sync", text)
+        self.assertIn("Lệnh `add`, `edit`", text)
+        self.assertIn("Hermes / OpenClaw rendering", text)
 
     def test_readme_is_non_dev_friendly(self) -> None:
         text = (ROOT / "README.md").read_text()
         required_sections = [
-            "## What it is",
+            "## The problem",
+            "## The fix",
+            "## What it does",
             "## What it is not",
-            "## Who it is for",
-            "## How it works",
-            "## MCP process lifetime",
-            "### 0. Install requirements",
-            "### 1. Install",
-            "### 2. Run",
-            "### 3. Check",
-            "## Remove / Undo",
-            "## Features",
-            "## Advanced commands",
+            "## Quick start",
+            "### Requirements",
+            "### Install",
+            "### First run",
+            "## Undo",
+            "## Supported features",
+            "## Runtime modes",
         ]
         for section in required_sections:
             self.assertIn(section, text)
 
         self.assertIn("```mermaid", text)
-        self.assertIn("Main supported flow today", text)
-        self.assertIn("Claude Code agent", text)
-        self.assertIn("Codex agent", text)
-        self.assertIn("One scoped MCP", text)
+        self.assertIn("With  —  scoped agents", text)
+        self.assertIn("Claude / Codex", text)
+        self.assertIn("MCP A only", text)
         self.assertIn("MCP process lifetime", text)
-        self.assertIn("Redacted tool metadata cache", text)
-        self.assertIn("No giant MCP tool schema", text)
-        self.assertIn("### Supported now", text)
-        self.assertIn("### Supported command helpers", text)
-        self.assertIn("### Not supported yet", text)
+        self.assertIn("redacted `tools/list` metadata", text)
+        self.assertIn("hundreds of schema lines", text)
         self.assertIn("Claude Code agent rendering", text)
-        self.assertIn("Hermes/OpenClaw rendering", text)
+        self.assertIn("Hermes / OpenClaw rendering", text)
         self.assertIn("curl -fsSL", text)
         self.assertIn("raw.githubusercontent.com/lkhung09/mcp-agent-manager/main/install.sh", text)
         self.assertIn("https://github.com/lkhung09/mcp-agent-manager.git", text)
         self.assertNotIn("<owner>", text)
         self.assertNotIn("<your-fork-or-clone-url>", text)
-        self.assertIn("Manual install", text)
-        self.assertIn("If you prefer to read the installer first", text)
-        self.assertIn("brew install git python jq zip ruby", text)
-        self.assertIn("sudo apt install -y bash git python3 jq zip ruby", text)
-        self.assertIn("source ~/.bashrc  # Ubuntu bash", text)
-        self.assertIn("Teleport `tsh` is optional", text)
+        self.assertIn("Manual:", text)
+        self.assertIn("Prefer to read first", text)
+        self.assertIn("brew install git python jq zip", text)
+        self.assertIn("sudo apt update && sudo apt install -y bash git python3 jq zip", text)
+        self.assertIn("source ~/.bashrc   # Linux bash", text)
+        self.assertIn("Not tied to Teleport", text)
         self.assertIn("MCP_AGENT_MANAGER_CHAT_IDLE_TIMEOUT", text)
-        self.assertIn("Default idle timeout: `300` seconds", text)
-        self.assertIn("Configurable chat-session idle timeout", text)
-        self.assertIn("`doctor`", text)
-        self.assertIn("`tools list/search/refresh/index`", text)
-        self.assertIn("`sync`", text)
+        self.assertIn("default 300s", text)
+        self.assertIn("Configurable session idle timeout", text)
+        self.assertIn("mcp-agent-manager doctor", text)
+        self.assertIn("mcp-agent-manager tools search", text)
+        self.assertIn("mcp-agent-manager sync", text)
         self.assertIn("`add`, `edit` commands", text)
-        self.assertLess(text.index("### 1. Install"), text.index("## Advanced commands"))
-        self.assertLess(text.index("## Remove / Undo"), text.index("## Advanced commands"))
-        self.assertIn("Most commands preview first.", text)
-        self.assertIn("File changes need `--apply`.", text)
+        self.assertLess(text.index("### Install"), text.index("## Demo"))
+        self.assertLess(text.index("## Undo"), text.index("## Contributing"))
+        self.assertIn("Every command previews before it changes anything.", text)
+        self.assertIn("Add `--apply` when the preview looks right.", text)
 
     def test_cli_help_matches_public_command_surface(self) -> None:
         help_commands = [
@@ -140,8 +139,10 @@ class PublicHygieneTests(unittest.TestCase):
             ["disable"],
             ["remove"],
             ["run"],
+            ["session"],
             ["chat-session"],
             ["tools"],
+            ["config"],
             ["install"],
             ["add"],
             ["edit"],
@@ -206,7 +207,7 @@ class PublicHygieneTests(unittest.TestCase):
             capture_output=True,
             timeout=20,
         ).stdout
-        self.assertIn("Use the name column as <name>", list_help)
+        self.assertIn("Use the name column as <mcp-name>", list_help)
 
         tools_help = subprocess.run(
             [str(MAM), "tools", "--help"],
@@ -225,12 +226,293 @@ class PublicHygieneTests(unittest.TestCase):
         self.assertIn("Helper command for generated agents and runtimes", run_help)
 
         chat_help = subprocess.run(
+            [str(MAM), "session", "--help"],
+            text=True,
+            capture_output=True,
+            timeout=20,
+        ).stdout
+        self.assertIn("Usage: mcp-agent-manager session <mcp-name>", chat_help)
+        self.assertIn("Helper command for agent runtimes", chat_help)
+        self.assertIn("Compatibility alias", chat_help)
+
+        legacy_chat_help = subprocess.run(
             [str(MAM), "chat-session", "--help"],
             text=True,
             capture_output=True,
             timeout=20,
         ).stdout
-        self.assertIn("Helper command for chat runtimes that speak JSONL", chat_help)
+        self.assertIn("Usage: mcp-agent-manager session <mcp-name>", legacy_chat_help)
+
+        config_help = subprocess.run(
+            [str(MAM), "config", "--help"],
+            text=True,
+            capture_output=True,
+            timeout=20,
+        ).stdout
+        self.assertIn("Usage: mcp-agent-manager config <get|set|reset> session-idle-timeout [seconds]", config_help)
+        self.assertIn("mcp-agent-manager config set session-idle-timeout 900", config_help)
+        self.assertIn("Compatibility alias", config_help)
+
+    def test_config_chat_idle_timeout_uses_temp_home_and_env_precedence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            env = {
+                **os.environ,
+                "HOME": str(home),
+                "PYTHONDONTWRITEBYTECODE": "1",
+            }
+
+            get_default = subprocess.run(
+                [str(MAM), "config", "get", "session-idle-timeout"],
+                text=True,
+                capture_output=True,
+                env=env,
+                timeout=20,
+            )
+            self.assertEqual(get_default.returncode, 0, get_default.stderr)
+            self.assertEqual(get_default.stdout.strip(), "300")
+
+            set_timeout = subprocess.run(
+                [str(MAM), "config", "set", "session-idle-timeout", "900"],
+                text=True,
+                capture_output=True,
+                env=env,
+                timeout=20,
+            )
+            self.assertEqual(set_timeout.returncode, 0, set_timeout.stderr)
+            settings = home / ".config" / "mcp-agent-manager" / "settings.env"
+            self.assertTrue(settings.exists())
+            self.assertEqual(stat.S_IMODE(settings.stat().st_mode), 0o600)
+            self.assertIn('export MCP_AGENT_MANAGER_CHAT_IDLE_TIMEOUT="900"', settings.read_text())
+
+            get_set = subprocess.run(
+                [str(MAM), "config", "get", "session-idle-timeout"],
+                text=True,
+                capture_output=True,
+                env=env,
+                timeout=20,
+            )
+            self.assertEqual(get_set.returncode, 0, get_set.stderr)
+            self.assertEqual(get_set.stdout.strip(), "900")
+
+            get_legacy_alias = subprocess.run(
+                [str(MAM), "config", "get", "chat-idle-timeout"],
+                text=True,
+                capture_output=True,
+                env=env,
+                timeout=20,
+            )
+            self.assertEqual(get_legacy_alias.returncode, 0, get_legacy_alias.stderr)
+            self.assertEqual(get_legacy_alias.stdout.strip(), "900")
+
+            env_override = {
+                **env,
+                "MCP_AGENT_MANAGER_CHAT_IDLE_TIMEOUT": "1200",
+            }
+            get_env = subprocess.run(
+                [str(MAM), "config", "get", "session-idle-timeout"],
+                text=True,
+                capture_output=True,
+                env=env_override,
+                timeout=20,
+            )
+            self.assertEqual(get_env.returncode, 0, get_env.stderr)
+            self.assertEqual(get_env.stdout.strip(), "1200")
+
+            invalid = subprocess.run(
+                [str(MAM), "config", "set", "session-idle-timeout", "5"],
+                text=True,
+                capture_output=True,
+                env=env,
+                timeout=20,
+            )
+            self.assertNotEqual(invalid.returncode, 0)
+            self.assertIn("between 30 and 86400", invalid.stderr)
+
+            reset = subprocess.run(
+                [str(MAM), "config", "reset", "session-idle-timeout"],
+                text=True,
+                capture_output=True,
+                env=env,
+                timeout=20,
+            )
+            self.assertEqual(reset.returncode, 0, reset.stderr)
+
+            get_reset = subprocess.run(
+                [str(MAM), "config", "get", "session-idle-timeout"],
+                text=True,
+                capture_output=True,
+                env=env,
+                timeout=20,
+            )
+            self.assertEqual(get_reset.returncode, 0, get_reset.stderr)
+            self.assertEqual(get_reset.stdout.strip(), "300")
+
+    def test_bootstrap_apply_does_not_crash_on_fresh_home(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            env = {**os.environ, "HOME": str(home), "PYTHONDONTWRITEBYTECODE": "1"}
+            result = subprocess.run(
+                [str(MAM), "bootstrap", "--apply"],
+                text=True,
+                capture_output=True,
+                env=env,
+                timeout=20,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            registry = home / ".config" / "mcp-agent-manager" / "registry.json"
+            self.assertTrue(registry.exists())
+            self.assertIn("file not found", result.stderr + result.stdout)
+
+    def test_doctor_accepts_jq_from_path_or_override_not_usr_bin_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            bin_dir = Path(tmp) / "bin"
+            home.mkdir()
+            bin_dir.mkdir()
+            fake_jq = bin_dir / "jq"
+            write_executable(fake_jq, "#!/usr/bin/env sh\nexit 0\n")
+            env = {
+                **os.environ,
+                "HOME": str(home),
+                "MCP_AGENT_MANAGER_JQ": str(fake_jq),
+                "PYTHONDONTWRITEBYTECODE": "1",
+            }
+            result = subprocess.run(
+                [str(MAM), "doctor"],
+                text=True,
+                capture_output=True,
+                env=env,
+                timeout=20,
+            )
+            self.assertIn(f"jq {fake_jq}", result.stdout)
+            self.assertNotIn("jq not found at /usr/bin/jq", result.stderr + result.stdout)
+
+    def test_run_parses_secrets_env_without_executing_shell_code(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            root = home / ".config" / "mcp-agent-manager"
+            root.mkdir(parents=True)
+            marker = home / "should-not-exist"
+            registry = {
+                "personal_mcp_servers": {
+                    "fixture": {
+                        "enabled": True,
+                        "transport": "stdio",
+                        "command": sys.executable,
+                        "args": ["-c", "import os; print(os.environ.get('NEED', ''))"],
+                        "env": {"NEED": "${SAFE_VALUE}"},
+                        "target": "all",
+                    }
+                }
+            }
+            (root / "registry.json").write_text(json.dumps(registry))
+            secrets = root / "secrets.env"
+            secrets.write_text(f'export SAFE_VALUE="$(touch {marker})"\n')
+            secrets.chmod(0o600)
+            env = {**os.environ, "HOME": str(home), "PYTHONDONTWRITEBYTECODE": "1"}
+            result = subprocess.run(
+                [str(MAM), "run", "fixture"],
+                text=True,
+                capture_output=True,
+                env=env,
+                timeout=20,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(marker.exists())
+            self.assertEqual(result.stdout.strip(), f"$(touch {marker})")
+
+    def test_apply_removes_quoted_mcp_name_with_dot_from_codex_toml(self) -> None:
+        server = (
+            "import json, sys\n"
+            "for line in sys.stdin:\n"
+            "    req=json.loads(line); method=req.get('method')\n"
+            "    if method == 'notifications/initialized': continue\n"
+            "    result={'protocolVersion':'2024-11-05','capabilities':{},'serverInfo':{'name':'fixture','version':'1'}} if method == 'initialize' else {'tools':[]}\n"
+            "    print(json.dumps({'jsonrpc':'2.0','id':req['id'],'result':result}), flush=True)\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            root = home / ".config" / "mcp-agent-manager"
+            codex_dir = home / ".codex"
+            root.mkdir(parents=True)
+            codex_dir.mkdir()
+            (root / "registry.json").write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "unmanaged_mcp_servers": [],
+                        "personal_mcp_servers": {
+                            "foo.bar": {
+                                "enabled": True,
+                                "description": "dot fixture",
+                                "transport": "stdio",
+                                "command": sys.executable,
+                                "args": ["-u", "-c", server],
+                                "env": {},
+                                "target": "codex",
+                            }
+                        },
+                    }
+                )
+            )
+            (root / "managed-state.json").write_text('{"version":1,"generated_files":[]}\n')
+            (root / "deferred.json").write_text('{"version":1,"deferred":{}}\n')
+            config = codex_dir / "config.toml"
+            config.write_text(
+                '[mcp_servers."foo.bar"]\n'
+                f'command = "{sys.executable}"\n'
+                'args = []\n'
+                '[mcp_servers."foo.bar".env]\n'
+                'TOKEN = "x"\n'
+                '[mcp_servers.keep]\n'
+                'command = "keep"\n'
+            )
+            env = {**os.environ, "HOME": str(home), "PYTHONDONTWRITEBYTECODE": "1"}
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    f"source {ROOT / 'lib' / 'utils.sh'}; "
+                    f"source {ROOT / 'lib' / 'registry.sh'}; "
+                    f"source {ROOT / 'lib' / 'renderer_claude.sh'}; "
+                    f"source {ROOT / 'lib' / 'renderer_codex.sh'}; "
+                    f"source {ROOT / 'lib' / 'apply.sh'}; "
+                    "_apply_remove_globals",
+                ],
+                text=True,
+                capture_output=True,
+                env=env,
+                timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            text = config.read_text()
+            self.assertNotIn('foo.bar', text)
+            self.assertIn("[mcp_servers.keep]", text)
+
+    def test_install_shell_rc_read_error_does_not_overwrite_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            rc_dir = Path(tmp) / "rc-dir"
+            home.mkdir()
+            rc_dir.mkdir()
+            env = {
+                **os.environ,
+                "HOME": str(home),
+                "SHELL": "/bin/bash",
+                "MAM_SHELL_RC": str(rc_dir),
+                "PYTHONDONTWRITEBYTECODE": "1",
+            }
+            result = subprocess.run(
+                [str(MAM), "install", "--apply"],
+                text=True,
+                capture_output=True,
+                env=env,
+                timeout=30,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertTrue(rc_dir.is_dir())
+            self.assertIn("failed reading shell rc", result.stderr)
 
     def test_curl_installer_clones_updates_and_stays_within_temp_home(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -274,8 +556,8 @@ class PublicHygieneTests(unittest.TestCase):
                     timeout=40,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertNotIn(BAD_ROOT, result.stdout)
-                self.assertNotIn(BAD_ROOT, result.stderr)
+                assert_no_private_source_leak(self, result.stdout)
+                assert_no_private_source_leak(self, result.stderr)
 
             self.assertTrue((install_dir / ".git").exists())
             cli_link = home / ".local" / "bin" / "mcp-agent-manager"
@@ -329,7 +611,7 @@ raise SystemExit(0)
                 timeout=30,
             )
             self.assertEqual(install.returncode, 0, install.stderr)
-            self.assertNotIn(BAD_ROOT, install.stdout)
+            assert_no_private_source_leak(self, install.stdout)
 
             cli_link = home / ".local" / "bin" / "mcp-agent-manager"
             skill_link = home / ".claude" / "skills" / "mcp-agent-manager"
@@ -351,8 +633,8 @@ raise SystemExit(0)
                 timeout=30,
             )
             self.assertEqual(doctor.returncode, 0, doctor.stderr)
-            self.assertNotIn(BAD_ROOT, doctor.stdout)
-            self.assertNotIn(BAD_ROOT, doctor.stderr)
+            assert_no_private_source_leak(self, doctor.stdout)
+            assert_no_private_source_leak(self, doctor.stderr)
 
     def test_bootstrap_preview_and_apply_on_fresh_home(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -398,7 +680,7 @@ enabled = true
             self.assertTrue((root / "registry.json").exists())
             self.assertTrue((root / "deferred.json").exists())
             self.assertTrue((root / "managed-state.json").exists())
-            self.assertNotIn(BAD_ROOT, apply.stdout)
+            assert_no_private_source_leak(self, apply.stdout)
 
     def test_render_uses_optional_site_map_example_shape(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -475,8 +757,9 @@ enabled = true
             "Also update ~/.zshrc idempotently",
             "<owner>",
             "<your-fork-or-clone-url>",
-            BAD_ROOT,
         ]
+        if not BAD_ROOT_IS_CURRENT_REPO:
+            patterns.append(BAD_ROOT)
         result = subprocess.run(
             [
                 "rg",
