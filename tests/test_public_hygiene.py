@@ -59,6 +59,10 @@ class PublicHygieneTests(unittest.TestCase):
         self.assertIn("MCP_AGENT_MANAGER_CHAT_IDLE_TIMEOUT", text)
         self.assertIn("Default idle timeout: `300` giây", text)
         self.assertIn("curl -fsSL", text)
+        self.assertIn("raw.githubusercontent.com/lkhung09/mcp-agent-manager/main/install.sh", text)
+        self.assertIn("https://github.com/lkhung09/mcp-agent-manager.git", text)
+        self.assertNotIn("<owner>", text)
+        self.assertNotIn("<your-fork-or-clone-url>", text)
         self.assertIn("brew install git python jq zip ruby", text)
         self.assertIn("sudo apt install -y bash git python3 jq zip ruby", text)
         self.assertIn("source ~/.bashrc  # Ubuntu bash", text)
@@ -101,6 +105,10 @@ class PublicHygieneTests(unittest.TestCase):
         self.assertIn("Claude Code agent rendering", text)
         self.assertIn("Hermes/OpenClaw rendering", text)
         self.assertIn("curl -fsSL", text)
+        self.assertIn("raw.githubusercontent.com/lkhung09/mcp-agent-manager/main/install.sh", text)
+        self.assertIn("https://github.com/lkhung09/mcp-agent-manager.git", text)
+        self.assertNotIn("<owner>", text)
+        self.assertNotIn("<your-fork-or-clone-url>", text)
         self.assertIn("Manual install", text)
         self.assertIn("If you prefer to read the installer first", text)
         self.assertIn("brew install git python jq zip ruby", text)
@@ -286,6 +294,8 @@ class PublicHygieneTests(unittest.TestCase):
         doctor_text = (ROOT / "lib" / "doctor.sh").read_text()
 
         self.assertIn("apt-get install -y $required_packages", install_text)
+        self.assertIn("https://github.com/lkhung09/mcp-agent-manager.git", install_text)
+        self.assertNotIn("<owner>", install_text)
         self.assertIn('required_packages="bash git python3 jq zip ruby"', install_text)
         self.assertIn('source "$HOME/.bashrc"  # bash on Ubuntu', install_text)
         self.assertIn("optional; only needed for Teleport sync", doctor_text)
@@ -401,7 +411,7 @@ enabled = true
                         "version": 1,
                         "unmanaged_mcp_servers": [],
                         "personal_mcp_servers": {
-                            "demo-mcp-site-1": {
+                            "demo-openstack-demo_site_1": {
                                 "enabled": True,
                                 "description": "openstack fixture",
                                 "transport": "stdio",
@@ -421,7 +431,7 @@ enabled = true
                     {
                         "DEMO_SITE_1": {
                             "alias": "demo-alias-1",
-                            "name": "demo-mcp-site-1",
+                            "name": "demo-openstack-demo_site_1",
                         }
                     },
                     indent=2,
@@ -443,8 +453,8 @@ enabled = true
                 timeout=20,
             )
             self.assertEqual(rendered.returncode, 0, rendered.stderr)
-            claude_agent = home / ".claude" / "agents" / "mcp-managed-demo-mcp-site-1.md"
-            codex_agent = home / ".codex" / "agents" / "mcp-managed-demo-mcp-site-1.toml"
+            claude_agent = home / ".claude" / "agents" / "mcp-managed-demo-openstack-demo_site_1.md"
+            codex_agent = home / ".codex" / "agents" / "mcp-managed-demo-openstack-demo_site_1.toml"
             self.assertTrue(claude_agent.exists())
             self.assertTrue(codex_agent.exists())
             self.assertIn("Topology alias demo-alias-1 maps to site DEMO_SITE_1", claude_agent.read_text())
@@ -463,6 +473,8 @@ enabled = true
             "--slug",
             "Ví dụ nhanh",
             "Also update ~/.zshrc idempotently",
+            "<owner>",
+            "<your-fork-or-clone-url>",
             BAD_ROOT,
         ]
         result = subprocess.run(

@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-repo_url="${MAM_REPO_URL:-https://github.com/<owner>/mcp-agent-manager.git}"
+repo_url="${MAM_REPO_URL:-https://github.com/lkhung09/mcp-agent-manager.git}"
 install_dir="${MAM_INSTALL_DIR:-$HOME/.local/share/mcp-agent-manager}"
 branch="${MAM_BRANCH:-main}"
 required_packages="bash git python3 jq zip ruby"

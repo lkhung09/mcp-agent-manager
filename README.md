@@ -94,13 +94,13 @@ Teleport `tsh` is optional on both platforms. Install it only if you use `sync`.
 One-command install:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<owner>/mcp-agent-manager/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/lkhung09/mcp-agent-manager/main/install.sh | sh
 ```
 
 If you prefer to read the installer first:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<owner>/mcp-agent-manager/main/install.sh -o install.sh
+curl -fsSL https://raw.githubusercontent.com/lkhung09/mcp-agent-manager/main/install.sh -o install.sh
 less install.sh
 sh install.sh
 ```
@@ -108,7 +108,7 @@ sh install.sh
 Manual install:
 
 ```bash
-git clone <your-fork-or-clone-url>
+git clone https://github.com/lkhung09/mcp-agent-manager.git
 cd mcp-agent-manager
 ./bin/mcp-agent-manager doctor
 ./bin/mcp-agent-manager install --apply
